@@ -1,0 +1,38 @@
+# Code required to take the videos form the cameras and splice them into png images
+# for the VLA/Diffusion Models to intake the demonstrations as data
+import os, time
+import cv2, numpy as np
+import pyrealsense2 as rs
+
+OUT = "captures"
+N_FRAMES = 5      # frames to save per camera
+WARMUP = 30       # frames skipped so exposure settles
+
+os.makedirs(OUT, exist_ok=True)
+devices = list(rs.context().query_devices())
+if not devices:
+    raise RuntimeError("No RealSense cameras found")
+
+for dev in devices:
+    serial = dev.get_info(rs.camera_info.serial_number)
+    label = dev.get_info(rs.camera_info.name).split()[-1]
+    print(f"capturing from {label} ({serial})")
+    pipe = rs.pipeline()
+    cfg = rs.config()
+    cfg.enable_device(serial)
+    cfg.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+    pipe.start(cfg)
+    try:
+        for _ in range(WARMUP):
+            pipe.wait_for_frames()
+        for i in range(N_FRAMES):
+            frames = pipe.wait_for_frames()
+            color = np.asanyarray(frames.get_color_frame().get_data())
+            path = os.path.join(OUT, f"{label}_{i:03d}_{int(time.time())}.png")
+            cv2.imwrite(path, color)
+            print("saved", path)
+            time.sleep(0.3)
+    finally:
+        pipe.stop()
+
+print("done -- images in ./captures/")
